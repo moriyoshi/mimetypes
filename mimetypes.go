@@ -25,68 +25,126 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"strings"
 )
 
 // MediaType represents a single media type designation
 type MediaType struct {
-	Name       string
+	Name  string
+	Globs []string
+}
+
+type InternalMediaType struct {
+	MediaType
 	Extensions []string
 }
 
 // BasicMediaTypeRegistry provides the basic implentation of MediaTypeRegistry.
 type BasicMediaTypeRegistry struct {
-	ExtToType  map[string]*MediaType
-	NameToType map[string]*MediaType
+	ExtToType      map[string]*InternalMediaType
+	ExactToType    map[string]*InternalMediaType
+	PatternsToType []*InternalMediaType
+	NameToType     map[string]*InternalMediaType
 }
+
+const metas = "*?[\\"
 
 // Add() adds a new MediaType to the registry.
 func (mtr *BasicMediaTypeRegistry) Add(mt MediaType) {
-	existingType, ok := mtr.NameToType[mt.Name]
-	if ok {
-		existingType.Extensions = append(
-			append(
-				make([]string, 0, len(existingType.Extensions)+len(mt.Extensions)),
-				existingType.Extensions...,
-			),
-			mt.Extensions...,
-		)
-		for _, ext := range mt.Extensions {
-			mtr.ExtToType[ext] = existingType
+	imt, ok := mtr.NameToType[mt.Name]
+	if !ok {
+		imt = &InternalMediaType{
+			MediaType: MediaType{
+				Name:  mt.Name,
+				Globs: []string{},
+			},
+			Extensions: []string{},
 		}
-	} else {
-		for _, ext := range mt.Extensions {
-			mtr.ExtToType[ext] = &mt
-		}
-		mtr.NameToType[mt.Name] = &mt
+		mtr.NameToType[mt.Name] = imt
 	}
+
+	for _, glob := range mt.Globs {
+		if strings.IndexAny(glob, metas) >= 0 {
+			if len(glob) > 2 && glob[0] == '*' && glob[1] == '.' && strings.IndexAny(glob[2:], metas) == -1 {
+				imt.Extensions = append(
+					imt.Extensions,
+					glob[1:],
+				)
+				mtr.ExtToType[glob[1:]] = imt
+			}
+		} else {
+			mtr.ExactToType[glob] = imt
+		}
+		mtr.PatternsToType = append(mtr.PatternsToType, imt)
+	}
+
+	imt.Globs = append(imt.Globs, mt.Globs...)
 }
 
 func (mtr *BasicMediaTypeRegistry) ExtensionsByType(typ string) ([]string, error) {
-	mt, ok := mtr.NameToType[typ]
+	imt, ok := mtr.NameToType[typ]
 	if !ok {
 		return nil, nil
 	}
-	return mt.Extensions, nil
+	return imt.Extensions, nil
 }
 
 func (mtr *BasicMediaTypeRegistry) TypeByExtension(ext string) string {
-	mt, ok := mtr.ExtToType[ext]
+	imt, ok := mtr.ExtToType[ext]
 	if !ok {
 		return ""
 	}
-	return mt.Name
+	return imt.Name
+}
+
+func (mtr *BasicMediaTypeRegistry) TypeByFilename(name string) string {
+	var imt *InternalMediaType
+	var ok bool
+	var ext string
+	imt, ok = mtr.ExactToType[name]
+	if ok {
+		goto found
+	}
+
+	ext = path.Ext(name)
+	if ext != "" {
+		imt, ok = mtr.ExtToType[ext]
+		if ok {
+			goto found
+		}
+	}
+
+	for _, imt = range mtr.PatternsToType {
+		for _, glob := range imt.Globs {
+			ok, err := path.Match(glob, name)
+			if err != nil {
+				continue
+			}
+			if ok {
+				goto found
+			}
+		}
+	}
+
+	return ""
+found:
+	return imt.Name
 }
 
 func NewBasicMediaTypeRegistry() *BasicMediaTypeRegistry {
 	return &BasicMediaTypeRegistry{
-		ExtToType:  map[string]*MediaType{},
-		NameToType: map[string]*MediaType{},
+		ExtToType:      map[string]*InternalMediaType{},
+		ExactToType:    map[string]*InternalMediaType{},
+		PatternsToType: []*InternalMediaType{},
+		NameToType:     map[string]*InternalMediaType{},
 	}
 }
 
 type MediaTypeRegistry interface {
 	ExtensionsByType(string) ([]string, error)
 	TypeByExtension(string) string
+	TypeByFilename(string) string
 }
 
 type Loader func(io.Reader) (MediaTypeRegistry, error)

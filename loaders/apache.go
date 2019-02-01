@@ -55,18 +55,21 @@ func LoadApacheStyleMimeTypeFile(r io.Reader) (mimetypes.MediaTypeRegistry, erro
 			return nil, fmt.Errorf("invalid entry at line %d", ln)
 		}
 
-		dottedExts := make([]string, len(fields)-1)
+		globs := make([]string, len(fields)-1)
 		for i, ext := range fields[1:] {
+			var glob string
 			if ext[0] != '.' {
-				ext = "." + ext
+				glob = "*." + ext
+			} else {
+				glob = "*" + ext
 			}
-			dottedExts[i] = ext
+			globs[i] = glob
 		}
 
 		mtr.Add(
 			mimetypes.MediaType{
-				Name:       fields[0],
-				Extensions: dottedExts,
+				Name:  fields[0],
+				Globs: globs,
 			},
 		)
 	}

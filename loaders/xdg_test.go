@@ -22,9 +22,12 @@
 package loaders
 
 import (
-	"github.com/stretchr/testify/assert"
+	"fmt"
+	"path"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadXDGGlobsFileOk(t *testing.T) {
@@ -36,13 +39,43 @@ func TestLoadXDGGlobsFileOk(t *testing.T) {
 application/x-foo:*.ext1
 application/x-foo:*.ext2
 application/x-bar:*.ext3
+application/x-exact-foo:exact1
+application/x-exact-foo:exact2
+application/x-exact-bar:exact3
+application/x-complex-glob-foo:com*ple*x
+application/x-complex-glob-foo:c*omp*lex
+application/x-complex-glob-bar:co*mple*x
 `,
 		),
 	)
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
-	assert.Equal(t, "application/x-foo", mtr.TypeByExtension(".ext1"))
-	assert.Equal(t, "application/x-foo", mtr.TypeByExtension(".ext2"))
-	assert.Equal(t, "application/x-bar", mtr.TypeByExtension(".ext3"))
+	cases := []struct {
+		expected string
+		name     string
+	}{
+		{"application/x-foo", "a.ext1"},
+		{"application/x-foo", "aa.ext1"},
+		{"application/x-foo", "a.ext2"},
+		{"application/x-foo", "aa.ext2"},
+		{"application/x-bar", "a.ext3"},
+		{"application/x-bar", "aa.ext3"},
+		{"application/x-exact-foo", "exact1"},
+		{"application/x-exact-foo", "exact2"},
+		{"application/x-exact-bar", "exact3"},
+		{"application/x-complex-glob-foo", "complex"},
+		{"application/x-complex-glob-foo", "commpleex"},
+		{"application/x-complex-glob-foo", "ccompppplex"},
+		{"application/x-complex-glob-bar", "coooompleeeeex"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%s / %s", c.expected, c.name), func(t *testing.T) {
+			ext := path.Ext(c.name)
+			if ext != "" {
+				assert.Equal(t, c.expected, mtr.TypeByExtension(ext))
+			}
+			assert.Equal(t, c.expected, mtr.TypeByFilename(c.name))
+		})
+	}
 }

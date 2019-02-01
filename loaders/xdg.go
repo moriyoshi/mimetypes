@@ -51,15 +51,10 @@ func LoadXDGGlobsFile(r io.Reader) (mimetypes.MediaTypeRegistry, error) {
 			return nil, fmt.Errorf("invalid entry at line %d", ln)
 		}
 
-		// not an actual extension; those should be like "AUTHORS", "README"...
-		if fields[1][0] != '*' || len(fields[1]) < 2 || fields[1][1] != '.' {
-			continue
-		}
-
 		mtr.Add(
 			mimetypes.MediaType{
-				Name:       fields[0],
-				Extensions: []string{fields[1][1:]},
+				Name:  fields[0],
+				Globs: []string{fields[1]},
 			},
 		)
 	}
@@ -69,8 +64,4 @@ func LoadXDGGlobsFile(r io.Reader) (mimetypes.MediaTypeRegistry, error) {
 	}
 
 	return mtr, nil
-}
-
-func init() {
-	mimetypes.AddLoader("xdg-globs", LoadXDGGlobsFile)
 }
